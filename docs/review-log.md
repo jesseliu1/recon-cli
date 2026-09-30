@@ -20,3 +20,14 @@
 - **验收命令与结果**：`pytest tests/test_loader.py -q` → `11 passed`。
 - **发现的问题**：无。
   - 说明：按任务边界，这一步的 `Decimal(amount_text)` 是未加保护的，非法金额会抛出 `decimal.InvalidOperation` 而不是 `InputError`，这是有意留给任务 2 的，不算本任务的缺陷。
+
+## task-2：行级校验与重复 id
+
+- **先红**：写完 `tests/test_validation.py`（27 个用例）后运行，`19 failed, 8 passed`。失败类型：
+  - 非法金额 `abc`、`1,000.00`、`$5`、`1.2.3`、`--1`、空金额：抛出裸的 `decimal.InvalidOperation`，而不是 `InputError`。
+  - `1e3`、`NaN`、`Infinity`、`-Infinity`、`1_000`：`Decimal()` 直接接受，没有任何报错（`DID NOT RAISE`）。
+  - 空行：`IndexError`；字段数过少：`IndexError`；字段数过多、空 id、重复 id、重复列名：都没有报错。
+- **验收命令与结果**：`pytest -q` → 实现后全部通过（含任务 1 的 11 个用例，无回归）。
+- **发现的问题**：
+  1. **`Decimal` 会接受 `NaN`/`Infinity`/`1e3`/`1_000`**（预期内，已列在 `edge-cases.md` #3）。由上面的红测试发现。修复：用显式正则 `[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)` 做 `fullmatch`，通过后才交给 `Decimal`。
+  2. **我第一版正则用了 `\d`，它在 Python 3 里匹配 Unicode 数字**（全角 `１２`、阿拉伯-印度数字 `٣` 会被当成合法金额，然后被 `Decimal` 静默接受）。这个问题**不是被预先写好的测试发现的**，是我实现完后自己复查时想到的，随后补了 `test_non_ascii_digits_rejected`，确认先红（3 failed）再修：把 `\d` 改为 `[0-9]`。教训：边界情况清单漏了"非 ASCII 数字"这一条，补充见 `edge-cases.md` #29。
