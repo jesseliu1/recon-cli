@@ -70,3 +70,16 @@
   3. **文件不存在 / 路径是目录时，`OSError` 未被捕获**：实现 CLI 之后 `test_missing_file_is_input_error` 与 `test_directory_as_input_is_input_error` 失败（出栈并以退出码 1 退出，会被误读成"有差异"）。修复：`load_records` 里捕获 `OSError` 转成 `InputError`。
   4. **文档里的验收命令缺前置条件**：`docs/tasks.md` 里写的 `python -m recon_cli ...` 在包未安装时会报 `No module named recon_cli`（我实际跑时发现）。于是补全了 `pyproject.toml`（setuptools 构建、`recon-cli` 入口、ruff 配置，`pip install -e .` 可用），并在 `tasks.md` 中加上"先 `pip install -e .`，或临时设置 `PYTHONPATH=src`"。
   - 无效 `--tolerance`（`abc`、`-0.01`、`NaN`、`Infinity`、`1e2`）与无效 `--format` 的用例，交给 `argparse` 的 `type=`/`choices=` 处理，第一次实现即通过。
+
+## task-7：大文件与性能冒烟
+
+- **先红**：**没有红。** `tests/test_large.py` 写完第一次运行就通过（`2 passed`）。原因：`load_records` 从任务 1 起就是用 `csv.reader` 逐行读取，本任务是对既有行为的确认（特性确认型测试），不是新功能，所以没有"先失败"可言。为避免测试空转，我做了两件事：断言了具体的四类数量（都由生成规则推出，不是照着输出抄的）；另外单独测量了实际耗时与内存，见下。
+- **验收命令与结果**：
+  - `pytest -q` → `93 passed`（约 9 秒，其中大文件用例占大头，含 `tracemalloc` 带来的额外开销）。
+  - 20 万行 × 2 文件：不带 `tracemalloc` 时 `load + reconcile` 约 0.85 秒；`tracemalloc` 峰值约 184 MB（未加 `slots`）。
+  - `scripts/cross_check.sh --large`：recon-cli、awk、sqlite3 三方一致：`matched=197010 missing_in_a=500 missing_in_b=1000 amount_mismatch=1990`。这组数也与 `docs/verification.md` 方法 2 里纸笔推算一致。
+  - `ruff check .`：提交前第一次运行报 1 个 `E501`（`tests/test_large.py` 一行 106 字符，超过 100）。修复后 → `All checks passed!`。
+- **发现的问题**：
+  0. **我在日志里先写了"ruff 通过"，但当时并没有看清输出，实际有 1 个 E501**；提交后复查才发现，已更正并 amend 了本任务的提交。
+  1. **内存偏高**：40 万条记录峰值约 184 MB（约 460 字节/条），说明"流式"只指逐行解析，内存仍是 O(行数)，与 `tasks.md` 里"已知限制"一致。给 `Record` 和 `Item` 加 `slots=True` 后峰值降到约 160 MB，仅下降约 13%，主要开销是 `Decimal` 对象与字符串本身，不再深究。阈值设为 400 MB 是有意放宽的（只防数量级退化），因此这个测试**抓不到**小幅度的内存回退。
+  2. **我写的 sqlite 核对脚本自己有性能缺陷**：第一版在视图上用 `id NOT IN (SELECT id FROM ...)`，没有索引，20 万行时长时间不返回（触发了 300 秒超时），是 O(n²)。改为物化成带主键的 `WITHOUT ROWID` 表后，整个脚本 2.5 秒跑完。这是被"实际运行"发现的，不是被任何自动测试发现的。

@@ -8,7 +8,7 @@ from decimal import Context, Decimal
 from recon_cli.loader import Record
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Item:
     id: str
     amount_a: str | None = None

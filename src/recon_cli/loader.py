@@ -18,7 +18,7 @@ class InputError(Exception):
     """The input file cannot be used (bad shape, encoding, or values)."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Record:
     id: str
     amount: Decimal
