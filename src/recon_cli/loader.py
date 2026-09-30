@@ -31,6 +31,8 @@ def load_records(path: str | Path) -> list[Record]:
     try:
         with path.open(encoding="utf-8-sig", newline="") as fh:
             return _read(fh, path)
+    except OSError as exc:
+        raise InputError(f"{path}: cannot read file ({exc.strerror})") from exc
     except UnicodeDecodeError as exc:
         raise InputError(f"{path}: file is not valid UTF-8 ({exc.reason})") from exc
 

@@ -56,3 +56,17 @@
 - **发现的问题**：
   1. **text 格式可被 id 里的换行"注入"假条目**。CSV 引号字段合法地允许换行，一个 id 为 `A1\n  fake_id: only in B` 的记录，在我第一版 text 输出里会变成两行，看起来像多出一条记录。实现通过全部预设测试后，我复查时想到；补测试先红（`1 failed, 10 passed`），再加 `_safe()`：不可打印字符转义为 `\n` 之类，可打印的非 ASCII（中文等）原样保留。JSON 输出由 `json.dumps` 负责转义，不受影响。
   - 其余用例（JSON 结构与键顺序、金额为字符串、`difference` 不使用科学计数法、确定性、中文 id 不转义、空结果）第一次实现即通过。`format(Decimal, "f")` 这一点是我在写实现时就特意处理的，测试只是确认。
+
+## task-6：命令行入口与退出码
+
+- **先红**：写完 `tests/test_cli.py`（13 个用例，用 `subprocess` 真实调用 `python -m recon_cli`）和 `examples/` 虚构示例数据后运行，`12 failed, 1 passed`。
+- **验收命令与结果**：
+  - `pytest -q` → `91 passed`（含前序任务，无回归）。
+  - 手动：`pip install -e .` 后 `python -m recon_cli examples/ledger.csv examples/bank.csv --format json | python -m json.tool` 可解析；`recon-cli examples/ledger.csv examples/bank.csv` 退出码为 `1`，摘要 `matched=4 missing_in_a=1 missing_in_b=1 amount_mismatch=1`，与示例数据的设计一致。
+  - `ruff check .` → `All checks passed!`。
+- **发现的问题**：
+  1. **我写的第一版测试有错**：示例数据的 `matched` 期望数我写成了 3（实际设计是 4），并且顺手写了一条 `... or True` 的恒真断言。运行前自己重读时发现，整个测试文件重写。（这一条没有被任何检查抓到，是重读发现的。）
+  2. **唯一"通过"的那个红测试是假通过**：`12 failed, 1 passed` 里的那 1 个是 `test_works_from_any_cwd`。原因是 `__main__.py` 还不存在时，Python 自己以退出码 `1` 退出，恰好等于我们约定的"发现差异 = 1"，测试只断言了退出码，于是误过。我把它加强为同时断言 stdout 里的 JSON 内容，之后 13 个全红。教训：退出码 1 与 Python 自身的错误退出码冲突，只断言退出码不够。
+  3. **文件不存在 / 路径是目录时，`OSError` 未被捕获**：实现 CLI 之后 `test_missing_file_is_input_error` 与 `test_directory_as_input_is_input_error` 失败（出栈并以退出码 1 退出，会被误读成"有差异"）。修复：`load_records` 里捕获 `OSError` 转成 `InputError`。
+  4. **文档里的验收命令缺前置条件**：`docs/tasks.md` 里写的 `python -m recon_cli ...` 在包未安装时会报 `No module named recon_cli`（我实际跑时发现）。于是补全了 `pyproject.toml`（setuptools 构建、`recon-cli` 入口、ruff 配置，`pip install -e .` 可用），并在 `tasks.md` 中加上"先 `pip install -e .`，或临时设置 `PYTHONPATH=src`"。
+  - 无效 `--tolerance`（`abc`、`-0.01`、`NaN`、`Infinity`、`1e2`）与无效 `--format` 的用例，交给 `argparse` 的 `type=`/`choices=` 处理，第一次实现即通过。

@@ -94,7 +94,7 @@
 - **输出**：结果写 stdout；错误写 stderr；退出码遵循假设 A10。
 - **验收标准**：
   - `pytest tests/test_cli.py -q` 全部通过（测试以 `subprocess` 真实调用 `python -m recon_cli`）。
-  - 手动验收：`python -m recon_cli examples/ledger.csv examples/bank.csv --format json` 的退出码为 `1`，输出可被 `python -m json.tool` 解析。
+  - 手动验收（先在虚拟环境里 `pip install -e .`，或临时设置 `PYTHONPATH=src`）：`python -m recon_cli examples/ledger.csv examples/bank.csv --format json` 的退出码为 `1`，输出可被 `python -m json.tool` 解析。
   - 测试覆盖：退出码 0/1/2 三种；文件不存在；非法 `--tolerance`（`abc`、负数）；非法 `--format`；输入文件有脏数据时退出码 2 且 stderr 含行号；stdout 与 stderr 分离；示例数据的期望输出。
 - **不做**：不做交互式界面；不读 stdin；不做配置文件；不做彩色输出；不做日志系统。
 
