@@ -39,3 +39,12 @@
 - **发现的问题**：
   1. **`reconcile` 对重复 id 静默"后者覆盖前者"**。第一版用 `{r.id: r for r in records}` 建索引，实现后自己复查时发现：`load_records` 虽然拒绝重复 id，但 `reconcile` 是公开函数，直接传入含重复 id 的列表时会悄悄丢一条记录，违背假设 A5（对账工具不应静默吞数据）。这不是预设测试发现的，是复查发现的。补了 `test_duplicate_ids_passed_directly_are_rejected`，先红（`1 failed, 11 passed`），再加 `_index()` 检查并抛 `ValueError`。
   - 其余用例（`1.0` 与 `1.00` 相等、`difference` 符号、`Decimal` 精确差值、排序、大小写敏感）第一次实现即通过，没有发现问题。
+
+## task-4：金额容差
+
+- **先红**：写完 `tests/test_tolerance.py`（13 个用例）后运行，`12 failed, 1 passed`。失败原因均为 `TypeError: reconcile() got an unexpected keyword argument 'tolerance'`（唯一通过的是不带容差参数的 `test_default_tolerance_is_zero`）。
+- **验收命令与结果**：`pytest -q` → `67 passed`（含前序任务，无回归）。
+- **发现的问题**：
+  1. **`Decimal` 减法受默认 28 位精度上下文影响，超长金额的 `difference` 被静默舍入**（例：`1000…0.00`（36 位整数）减 `0.01` 得到 `1.000000000000000000000000000E+35`，而不是 `99999999999999999999999999999999999.99`）。实现通过全部预设测试后，我复查时想到这一点，先写了一个用例，但**第一个版本的用例没有区分力**（差值位数很少，未触发舍入，直接通过）。用 REPL 确认舍入确实发生后，换成结果本身有 38 位的用例，红（`1 failed, 13 passed`）。修复：`_exact_difference()`，按两数的位数与指数算出所需精度，用独立 `Context` 做减法。这个场景对真实金额几乎不会出现，但对账工具不该在此处静默失真。
+  2. 我在修改测试时曾留下一行无意义的 `... or True` 断言（会让该断言恒真），在提交前自查时删掉了。
+  - 其余用例（边界等于容差、多一个最小单位、对称、浮点陷阱 `1.0 - 0.7`、负容差与 `NaN`/`Infinity` 容差）第一次实现即通过。
